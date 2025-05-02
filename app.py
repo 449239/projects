@@ -3,8 +3,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import requests
 import re
-from bs4 import BeautifulSoup
 import os
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +27,11 @@ class User(db.Model):
 with app.app_context():
     os.makedirs("db", exist_ok=True)
     db.create_all()
+
+# Health check route
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200
 
 # Routes
 @app.route('/')
@@ -73,7 +78,7 @@ def reddit_search():
         return jsonify({"error": "Missing 'query' in request body"}), 400
 
     query = data['query'].lower()
-    print(f"🔍 Searching for: {query}")
+    print(f"🔍 Searching Reddit for: {query}")
     keywords = query.split()
 
     headers = {
@@ -85,7 +90,16 @@ def reddit_search():
 
     try:
         res = requests.get(search_url, headers=headers)
-        posts = res.json().get('data', {}).get('children', [])
+        print(f"Reddit status: {res.status_code}")
+
+        if res.status_code != 200:
+            return jsonify({"error": "Reddit blocked or returned error", "status": res.status_code}), 502
+
+        try:
+            posts = res.json().get('data', {}).get('children', [])
+        except Exception as e:
+            return jsonify({"error": f"Failed to parse Reddit JSON: {str(e)}"}), 500
+
         formatted_results = []
 
         for post in posts:
@@ -103,14 +117,17 @@ def reddit_search():
             comments_url = f"https://www.reddit.com{post_data['permalink']}.json"
             comments_res = requests.get(comments_url, headers=headers)
             if comments_res.status_code == 200:
-                comments_data = comments_res.json()
-                if len(comments_data) > 1:
-                    for comment in comments_data[1]['data']['children']:
-                        body = comment['data'].get('body', '').lower()
-                        if any(kw in body for kw in keywords):
-                            found_links = re.findall(r'https?://\S+', body)
-                            clean_links = [l.split(')')[0] for l in found_links if any(domain in l for domain in marketplace_domains)]
-                            comment_links.extend(clean_links)
+                try:
+                    comments_data = comments_res.json()
+                    if len(comments_data) > 1:
+                        for comment in comments_data[1]['data']['children']:
+                            body = comment['data'].get('body', '').lower()
+                            if any(kw in body for kw in keywords):
+                                found_links = re.findall(r'https?://\S+', body)
+                                clean_links = [l.split(')')[0] for l in found_links if any(domain in l for domain in marketplace_domains)]
+                                comment_links.extend(clean_links)
+                except Exception as e:
+                    print("Error parsing comments JSON:", e)
 
             if body_links or comment_links:
                 formatted_results.append({
