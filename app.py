@@ -4,7 +4,6 @@ from flask_cors import CORS
 import requests
 import re
 import os
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,15 +27,15 @@ with app.app_context():
     os.makedirs("db", exist_ok=True)
     db.create_all()
 
-# Health check route
-@app.route('/health', methods=['GET'])
+# Health route
+@app.route('/health')
 def health():
     return jsonify({"status": "ok"}), 200
 
 # Routes
 @app.route('/')
 def home():
-    return "OpenAI Flask API is running!"
+    return "Flask Reddit Scraper API is live."
 
 @app.route('/users', methods=['POST'])
 def create_user():
@@ -90,15 +89,22 @@ def reddit_search():
 
     try:
         res = requests.get(search_url, headers=headers)
-        print(f"Reddit status: {res.status_code}")
+        print(f"🔎 Reddit status: {res.status_code}")
 
         if res.status_code != 200:
-            return jsonify({"error": "Reddit blocked or returned error", "status": res.status_code}), 502
+            return jsonify({
+                "error": "Reddit rejected the search request",
+                "status_code": res.status_code,
+                "response_sample": res.text[:200]
+            }), 502
 
         try:
             posts = res.json().get('data', {}).get('children', [])
         except Exception as e:
-            return jsonify({"error": f"Failed to parse Reddit JSON: {str(e)}"}), 500
+            return jsonify({
+                "error": f"Failed to parse Reddit JSON: {str(e)}",
+                "raw_response": res.text[:200]
+            }), 500
 
         formatted_results = []
 
@@ -116,6 +122,7 @@ def reddit_search():
             comment_links = []
             comments_url = f"https://www.reddit.com{post_data['permalink']}.json"
             comments_res = requests.get(comments_url, headers=headers)
+
             if comments_res.status_code == 200:
                 try:
                     comments_data = comments_res.json()
@@ -127,7 +134,7 @@ def reddit_search():
                                 clean_links = [l.split(')')[0] for l in found_links if any(domain in l for domain in marketplace_domains)]
                                 comment_links.extend(clean_links)
                 except Exception as e:
-                    print("Error parsing comments JSON:", e)
+                    print(f"⚠️ Failed to parse comment JSON: {e}")
 
             if body_links or comment_links:
                 formatted_results.append({
@@ -144,9 +151,10 @@ def reddit_search():
         return jsonify({"status": "success", "results": formatted_results})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Unhandled exception: {str(e)}"}), 500
 
 if __name__ == '__main__':
     from waitress import serve
     print("✅ Server starting on http://127.0.0.1:5000")
     serve(app, host='0.0.0.0', port=5000)
+
