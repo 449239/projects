@@ -68,17 +68,18 @@ def delete_user(user_id):
 
 @app.route('/reddit-search', methods=['POST'])
 def reddit_search():
-    try:
-        data = request.get_json(force=True)
-    except Exception as e:
-        return jsonify({"error": "Invalid JSON format"}), 400
-
+    data = request.get_json(silent=True)
     if not data or 'query' not in data:
         return jsonify({"error": "Missing 'query' in request body"}), 400
 
     query = data['query'].lower()
+    print(f"🔍 Searching for: {query}")
     keywords = query.split()
-    headers = {'User-Agent': 'Mozilla/5.0'}
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    }
+
     search_url = f"https://www.reddit.com/r/FashionReps/search.json?q={'+'.join(keywords)}&restrict_sr=on&sort=relevance"
     marketplace_domains = ["taobao.com", "weidian.com", "tmall.com", "1688.com", "pandabuy.com"]
 
@@ -130,4 +131,5 @@ def reddit_search():
 
 if __name__ == '__main__':
     from waitress import serve
+    print("✅ Server starting on http://127.0.0.1:5000")
     serve(app, host='0.0.0.0', port=5000)
